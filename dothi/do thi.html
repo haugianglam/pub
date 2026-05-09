@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Math Graphs</title>
+    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 20px;
+        }
+        .plot-container {
+            width: 45%;
+            min-width: 350px;
+            height: 400px;
+            margin: 10px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="plot-exp" class="plot-container"></div>
+    <div id="plot-sinh" class="plot-container"></div>
+    <div id="plot-tan" class="plot-container"></div>
+    <div id="plot-ln" class="plot-container"></div>
+
+    <script>
+        // Hàm hỗ trợ tạo tập dữ liệu (x, y)
+        function createData(func, xMin, xMax, step, yLimit = null) {
+            let x = [], y = [];
+            for (let i = xMin; i <= xMax; i += step) {
+                let val = func(i);
+                // Xử lý để cắt đứt các đường nối tại tiệm cận của hàm tan(x)
+                if (yLimit !== null && Math.abs(val) > yLimit) {
+                    x.push(i); 
+                    y.push(null);
+                } else {
+                    x.push(i); 
+                    y.push(val);
+                }
+            }
+            return {x: x, y: y};
+        }
+
+        // Tạo dữ liệu cho 4 hàm số
+        const dataExp = createData(Math.exp, -5, 5, 0.05);
+        const dataSinh = createData(Math.sinh, -5, 5, 0.05);
+        const dataTan = createData(Math.tan, -2 * Math.PI, 2 * Math.PI, 0.05, 10);
+        const dataLn = createData(Math.log, 0.01, 10, 0.05); // ln(x) chỉ xác định khi x > 0
+
+        // Cấu hình hiển thị chung
+        const layoutConfig = (title) => ({
+            title: { text: title, font: { size: 18 } },
+            margin: { t: 50, b: 40, l: 50, r: 30 },
+            dragmode: 'pan', // Chế độ mặc định là kéo thả để di chuyển đồ thị
+            hovermode: 'closest',
+            xaxis: { zeroline: true, zerolinewidth: 2, zerolinecolor: '#333' },
+            yaxis: { zeroline: true, zerolinewidth: 2, zerolinecolor: '#333' }
+        });
+
+        // Kích hoạt scrollZoom để cho phép thu phóng bằng con lăn chuột
+        const config = { responsive: true, scrollZoom: true, displayModeBar: true };
+
+        // Vẽ từng đồ thị
+        Plotly.newPlot('plot-exp', [{ x: dataExp.x, y: dataExp.y, type: 'scatter', mode: 'lines', line: {color: '#1f77b4', width: 2} }], layoutConfig('y = e^x'), config);
+        Plotly.newPlot('plot-sinh', [{ x: dataSinh.x,

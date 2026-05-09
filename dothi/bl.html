@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bloch Sphere - 360/720 Trajectory</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; background-color: #121212; color: #fff; }
+        #ui-panel { 
+            position: absolute; top: 20px; left: 20px; 
+            background: rgba(30, 30, 30, 0.9); padding: 20px; 
+            border-radius: 12px; border: 1px solid #333; width: 320px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+        .control-group { margin-bottom: 20px; }
+        .sync-group { 
+            background: rgba(74, 144, 226, 0.1); 
+            padding: 15px; border-radius: 8px; border: 1px solid #4a90e2;
+        }
+        label { display: flex; justify-content: space-between; font-size: 0.9em; margin-bottom: 8px; }
+        input[type=range] { width: 100%; cursor: pointer; }
+        .math-display {
+            font-family: 'Courier New', monospace; background: #000;
+            padding: 12px; border-radius: 6px; margin-top: 10px;
+            font-size: 0.85em; color: #00ffcc; text-align: center;
+        }
+        .stats { font-size: 0.8em; color: #888; margin-top: 10px; line-height: 1.6; }
+        b { color: #4a90e2; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+
+    <div id="ui-panel">
+        <h2 style="margin: 0 0 15px 0; font-size: 1.2em;">Bloch Sphere Trajectory</h2>
+        
+        <div class="control-group sync-group">
+            <label for="master">
+                <span><b>Sync Cycle (Chu kỳ đồng bộ)</b></span>
+                <span id="master-val">0°</span>
+            </label>
+            <input type="range" id="master" min="0" max="360" value="0">
+            <div class="stats">Tỷ lệ: 1° θ → 2° φ</div>
+        </div>
+
+        <div class="control-group">
+            <label>Polar Angle (Góc cực) θ: <span id="theta-val">0°</span></label>
+            <input type="range" id="theta" min="0" max="360" value="0" disabled>
+        </div>
+        
+        <div class="control-group">
+            <label>Azimuthal Angle (Góc phương vị) φ: <span id="phi-val">0°</span></label>
+            <input type="range" id="phi" min="0" max="720" value="0" disabled>
+        </div>
+
+        <div class="math-display" id="state-vector">
+            |ψ⟩ = 1.00|0⟩ + 0.00|1⟩
+        </div>
+    </div>
+
+    <script>
+        // --- KHỞI TẠO THREE.JS ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.up.set(0, 0, 1); 
+        camera.position.set(2.5, 2.5, 1.5);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+
+        // --- VẬT THỂ TRONG SCENE ---
+        const sphereGeo = new THREE.SphereGeometry(1, 40, 40);
+        const sphereMat = new THREE.MeshBasicMaterial({ color: 0x444444, wireframe: true, transparent: true, opacity: 0.1 });
+        scene.add(new THREE.Mesh(sphereGeo, sphereMat));
+
+        const createCircle = (radius, color, rotation) => {
+            const curve = new THREE.EllipseCurve(0, 0, radius, radius, 0, 2 * Math.PI, false, 0);
+            const points = curve.getPoints(64);
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const material = new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.5 });
+            const line = new THREE.Line(geometry, material);
+            if(rotation) line.rotation.copy(rotation);
+            return line;
+        };
+        scene.add(createCircle(1, 0x888888)); 
+        const lineY = createCircle(1, 0x555555); lineY.rotation.x = Math.PI/2; scene.add(lineY);
+        const lineX = createCircle(1, 0x555555); lineX.rotation.y = Math.PI/2; scene.add(lineX);
+
+        const axesHelper = new THREE.AxesHelper(1.5);
+        scene.add(axesHelper);
+
+        const arrowHelper = new THREE.ArrowHelper(
+            new THREE.Vector3(0, 0, 1), 
+            new THREE.Vector3(0, 0, 0), 
+            1, 0x00ffcc, 0.15, 0.08
+        );
+        scene.add(arrowHelper);
+
+        const trajectoryMaterial = new THREE.LineBasicMaterial({ color: 0xff00ff, linewidth: 2 });
+        const trajectoryGeometry = new THREE.BufferGeometry();
+        const trajectoryLine = new THREE.Line(trajectoryGeometry, trajectoryMaterial);
+        scene.add(trajectoryLine);
+
+        // --- LOGIC ĐIỀU KHIỂN ---
+        const masterSlider = document.getElementById('master');
+        const thetaSlider = document.getElementById('theta');
+        const phiSlider = document.getElementById('phi');
+        
+        const masterText = document.getElementById('master-val');
+        const thetaText = document.getElementById('theta-val');
+        const phiText = document.getElementById('phi-val');
+        const stateText = document.getElementById('state-vector');
+
+        function updateSimulation() {
+            const val = parseFloat(masterSlider.value);
+            
+            const thetaDeg = val;
+            const phiDeg = val * 2;
+
+            masterText.innerText = val + "°";
+            thetaText.innerText = thetaDeg + "°";
+            phiText.innerText = phiDeg + "°";
+            thetaSlider.value = thetaDeg;
+            phiSlider.value = phiDeg;
+
+            const thetaRad = thetaDeg * (Math.PI / 180);
+            const phiRad = phiDeg * (Math.PI / 180);
+            
+            const currentX = Math.sin(thetaRad) * Math.cos(phiRad);
+            const currentY = Math.sin(thetaRad) * Math.sin(phiRad);
+            const currentZ = Math.cos(thetaRad);
+
+            arrowHelper.setDirection(new THREE.Vector3(currentX, currentY, currentZ).normalize());
+
+            const pathPoints = [];
+            // Vòng lặp bây giờ sẽ quét tới tối đa 360 độ
+            for (let i = 0; i <= val; i += 1) { 
+                const tRad = i * (Math.PI / 180);
+                const pRad = (i * 2) * (Math.PI / 180);
+                
+                const px = Math.sin(tRad) * Math.cos(pRad);
+                const py = Math.sin(tRad) * Math.sin(pRad);
+                const pz = Math.cos(tRad);
+                
+                pathPoints.push(new THREE.Vector3(px, py, pz));
+            }
+            
+            if (pathPoints.length === 1) {
+                pathPoints.push(new THREE.Vector3(0, 0, 1));
+            }
+
+            trajectoryLine.geometry.setFromPoints(pathPoints);
+
+            const amp0 = Math.cos(thetaRad / 2).toFixed(2);
+            const amp1 = Math.sin(thetaRad / 2).toFixed(2);
+            // Sửa hiển thị góc phi để nằm trong [0, 360) theo chuẩn bằng phép modulo
+            const displayPhi = phiDeg % 360;
+            stateText.innerHTML = `|ψ⟩ = ${amp0}|0⟩ + e<sup>i(${displayPhi}°)</sup>${amp1}|1⟩`;
+        }
+
+        masterSlider.addEventListener('input', updateSimulation);
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        updateSimulation();
+        animate();
+    </script>
+</body>
+</html>
